@@ -165,7 +165,6 @@ export default function Home() {
                                     ui: drawioUi,
                                     // Hide built-in draw.io splash/loading UI
                                     spin: false,
-                                    splash: 0,
                                     libraries: false,
                                     saveAndExit: false,
                                     noExitBtn: true,
