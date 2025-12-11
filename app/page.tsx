@@ -18,7 +18,15 @@ export default function Home() {
     // Always start with "min" to avoid hydration mismatch
     // Will be updated from localStorage after hydration
     const [drawioUi, setDrawioUi] = useState<"min" | "sketch">("min");
+    const [isMounted, setIsMounted] = useState(false);
+    const [isEditorReady, setIsEditorReady] = useState(false);
     const chatPanelRef = useRef<ImperativePanelHandle>(null);
+    const editorContainerRef = useRef<HTMLDivElement>(null);
+
+    // Mark client mount to avoid rendering iframe during SSR
+    useEffect(() => {
+        setIsMounted(true);
+    }, []);
 
     // Load theme from localStorage after hydration
     useEffect(() => {
@@ -63,6 +71,31 @@ export default function Home() {
         return () => window.removeEventListener("keydown", handleKeyDown);
     }, []);
 
+    // Wait for iframe load to hide native draw.io splash/loading screen
+    useEffect(() => {
+        if (!isMounted) return;
+
+        // Reset readiness whenever UI theme changes (new iframe)
+        setIsEditorReady(false);
+
+        const iframe =
+            editorContainerRef.current?.querySelector<HTMLIFrameElement>(
+                "iframe"
+            );
+        if (!iframe) return;
+
+        const handleLoad = () => setIsEditorReady(true);
+        iframe.addEventListener("load", handleLoad);
+
+        // Fallback in case load event is missed
+        const fallback = window.setTimeout(() => setIsEditorReady(true), 2000);
+
+        return () => {
+            iframe.removeEventListener("load", handleLoad);
+            window.clearTimeout(fallback);
+        };
+    }, [isMounted, drawioUi]);
+
     // Show confirmation dialog when user tries to leave the page
     // This helps prevent accidental navigation from browser back gestures
     useEffect(() => {
@@ -75,6 +108,17 @@ export default function Home() {
         return () =>
             window.removeEventListener("beforeunload", handleBeforeUnload);
     }, []);
+
+    if (!isMounted) {
+        return (
+            <div className="h-screen bg-background flex items-center justify-center">
+                <div className="flex items-center gap-3 text-muted-foreground">
+                    <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+                    <span className="text-sm">Loading workspace…</span>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="h-screen bg-background relative overflow-hidden">
@@ -101,17 +145,34 @@ export default function Home() {
                 {/* Draw.io Canvas */}
                 <ResizablePanel defaultSize={67} minSize={30}>
                     <div className="h-full relative p-2">
-                        <div className="h-full rounded-xl overflow-hidden shadow-soft-lg border border-border/30 bg-white">
+                        <div
+                            ref={editorContainerRef}
+                            className="h-full rounded-xl overflow-hidden shadow-soft-lg border border-border/30 bg-white relative"
+                        >
+                            {!isEditorReady && (
+                                <div className="absolute inset-0 z-20 flex items-center justify-center bg-white">
+                                    <div className="flex items-center gap-3 text-muted-foreground">
+                                        <div className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+                                        <span className="text-sm">Preparing editor…</span>
+                                    </div>
+                                </div>
+                            )}
                             <DrawIoEmbed
                                 key={drawioUi}
                                 ref={drawioRef}
                                 onExport={handleDiagramExport}
                                 urlParameters={{
                                     ui: drawioUi,
-                                    spin: true,
+                                    // Hide built-in draw.io splash/loading UI
+                                    spin: false,
+                                    splash: 0,
                                     libraries: false,
                                     saveAndExit: false,
                                     noExitBtn: true,
+                                }}
+                                style={{
+                                    opacity: isEditorReady ? 1 : 0,
+                                    transition: "opacity 150ms ease",
                                 }}
                             />
                         </div>
